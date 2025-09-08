@@ -1,0 +1,31 @@
+parameters:
+  ServiceConnection: ''
+  SubscriptionId: ''
+  ApplicationName: ''
+  LockType: 'CanNotDelete'
+  LockState: 'Enabled'
+  environmentName: ''
+
+steps:
+- task: AzureCLI@2
+  displayName: "Resource Groups lock ${{ parameters.LockState }}"
+  inputs:
+    azureSubscription: ${{ parameters.ServiceConnection }}
+    scriptType: pscore
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      $VariableData = (Get-Content "$(Pipeline.Workspace)/s/environments/${{ parameters.environmentName }}/terraform.tfvars" -Raw) 
+      $Output=(($VariableData.Substring($VariableData.LastIndexOf("appl")) -split '\n')[0])
+      $application=($Output | ConvertFrom-StringData).appl.trim('"')
+
+      # Collect a list of resource group names using the Azure CLI
+      $resourceGroupNames=$(az group list --query "[?contains(name, '${{ parameters.environmentName }}-$application')].name" -o tsv)
+      # Create or delete the lock on the resource group based on the LockState parameter value
+      echo "Lock for the following Resource groups will be ${{ parameters.LockState }}: $resourceGroupNames"
+      foreach ($group in $resourceGroupNames) { 
+        if ("${{ parameters.LockState }}" -eq 'Enabled') { 
+          az group lock create -g $group -n "Delete" -t ${{ parameters.LockType }} 
+        } elseif ("${{ parameters.LockState }}" -eq 'Disabled') { 
+          az group lock delete -g $group -n "Delete" 
+        }  
+      }

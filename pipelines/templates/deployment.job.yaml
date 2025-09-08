@@ -1,0 +1,132 @@
+parameters:
+  - name: environmentName
+    type: string
+  - name: conditionalValue
+    type: string
+
+jobs:
+  - deployment: ${{ parameters.environmentName }}
+    displayName: "Deploying ${{ parameters.environmentName }}"
+    pool:
+        name: $(node_pool)
+    environment: dmp-mdm-terraform-apply-${{ parameters.conditionalValue }}
+    workspace:
+      clean: all
+    condition: |
+      and(
+        eq(stageDependencies.Build.${{ parameters.environmentName }}.outputs['tfplan.changesPresent'], 'true'),
+        in(stageDependencies.Build.${{ parameters.environmentName }}.result, 'succeeded'),
+        not(canceled()), 
+        not(failed())
+      )
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - checkout: self
+              displayName: git checkout
+              clean: true
+              condition: and(
+                not(failed()),
+                not(canceled())
+                )
+
+            - task: DownloadPipelineArtifact@2
+              displayName: Downloading Plan
+              condition: and(
+                  not(failed()),
+                  not(canceled())
+                  )
+              inputs:
+                buildType: 'current'
+                artifactName: '${{ parameters.environmentName }}'
+                targetPath: '$(Pipeline.Workspace)/s/masterdata'
+      
+            - task: AzureCLI@2
+              name: set_variables
+              displayName: Set Terraform Credentials
+              inputs:
+                azureSubscription: $(serviceConnectionName)
+                addSpnToEnvironment: true
+                scriptType: pscore
+                scriptLocation: inlineScript
+                inlineScript: |
+                  Write-Host "##vso[task.setvariable variable=ARM_USE_OIDC]true"
+                  Write-Host "##vso[task.setvariable variable=ARM_OIDC_TOKEN]$env:idToken"
+                  Write-Host "##vso[task.setvariable variable=ARM_CLIENT_ID]$env:servicePrincipalId"
+                  Write-Host "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID]$(az account show --query id -o tsv)"
+                  Write-Host "##vso[task.setvariable variable=ARM_TENANT_ID]$env:tenantId"
+
+
+            - task: TerraformInstaller@0
+              displayName: Terraform Install
+              condition: and(
+                not(failed()),
+                not(canceled())
+                )
+              inputs:
+                terraformVersion: $(terraform_version)
+
+            - task: TerraformTaskV3@3
+              displayName: Terraform Initialization
+              condition: and(
+                not(failed()),
+                not(canceled())
+                )
+              inputs:
+                provider: 'azurerm'
+                command: 'custom'
+                workingDirectory: '$(Pipeline.Workspace)/s/masterdata'
+                customCommand: 'init'
+                commandOptions: >-
+                  -backend-config storage_account_name=$(backendAzureRmStorageAccountName) 
+                  -backend-config container_name=$(backendAzureRmContainerName) 
+                  -backend-config key=$(backendAzureRmKey).tfstate 
+                  -backend-config resource_group_name=$(backendAzureRmResourceGroupName) 
+                  -backend-config subscription_id=$(backendAzureRmSubscriptionId)
+                  -var=ARM_USE_OIDC=true
+                  -var=ARM_OIDC_TOKEN=$(idToken)
+                  -var=ARM_CLIENT_ID=$(servicePrincipalId)
+                  -var=ARM_TENANT_ID=$(tenantId)
+                outputTo: 'console'
+                environmentServiceNameAzureRM: $(serviceConnectionName)
+
+            - template: /pipelines/templates/toggleResourceGroupLock.yaml
+              parameters:
+                ServiceConnection: '$(serviceConnectionName)'
+                SubscriptionId: $(backendAzureRmSubscriptionId)
+                ApplicationName: '$(applicationName)'
+                LockState: 'Disabled'
+                environmentName: '${{ parameters.environmentName }}'
+
+            - task: TerraformTaskV3@3
+              displayName: Terraform Apply
+              condition: and(
+                not(failed()),
+                not(canceled())
+                )
+              inputs:
+                provider: 'azurerm'
+                command: 'apply'
+                workingDirectory: '$(Pipeline.Workspace)/s/masterdata'
+                commandOptions: '$(Pipeline.Workspace)/s/masterdata/${{ parameters.environmentName }}.tfplan'
+                environmentServiceNameAzureRM: $(serviceConnectionName)
+
+            - template: /pipelines/templates/toggleResourceGroupLock.yaml
+              parameters:
+                ServiceConnection: '$(serviceConnectionName)'
+                SubscriptionId: $(backendAzureRmSubscriptionId)
+                ApplicationName: '$(applicationName)'
+                LockState: 'Enabled'
+                environmentName: '${{ parameters.environmentName }}'
+
+            - task: DeleteFiles@1
+              displayName: 'Remove temporary files'
+              condition: and(
+                not(failed()),
+                not(canceled())
+                )
+              inputs:
+                contents: $(Pipeline.Workspace)/s/**
+                RemoveSourceFolder: true
+                SourceFolder: $(Pipeline.Workspace)

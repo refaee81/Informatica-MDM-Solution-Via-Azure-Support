@@ -1,0 +1,225 @@
+#cloud-config
+package_update: false
+package_upgrade: false
+# Install required libraries.
+packages:
+# - libnsl
+# - libidn.x86_64
+write_files:
+  - owner: ${adminuser}:${adminuser}
+    path: /home/${adminuser}/enable_agent.sh
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      user=$1 
+      password=$2
+      group=$3
+      mdmagentadmin=$4
+      login="$(curl --request POST \
+                      --url https://dm-na.informaticacloud.com/ma/api/v2/user/login \
+                      --header 'Accept: application/json' \
+                      --header 'Content-Type: application/json' \
+                      --data '
+                              {
+                                  "username": "'"$user"'",
+                                  "password": "'"$password"'"
+                              }
+                  ')"
+      serverUrl=$(echo $login | jq -r .serverUrl)
+      sessionId=$(echo $login | jq -r .icSessionId)
+      agent="$(curl --request GET \
+                      --url $serverUrl/api/v2/agent/installerInfo/linux64 \
+                      --header 'Accept: application/xml' \
+                      --header 'Content-Type: application/xml' \
+                      --header 'icSessionId: '"$sessionId"'')"
+      # Check if Security Group exists and create if not
+      result=$(curl --request GET --url "$serverUrl/api/v2/runtimeEnvironment/" --header "icSessionId: $sessionId" --header 'Accept: application/json' | jq -r '.[] | select(.name == "'"$group"'") | .id')
+      if [[ $result -eq "" ]]; then 
+        action=$(curl --request POST --url "$serverUrl/api/v2/runtimeEnvironment" --header 'Content-Type: application/json' --header 'Accept: application/json' --header "icSessionId: $sessionId" --data '{"@type":"runtimeEnvironment","name":"'"$group"'"}')
+        result=$(curl --request GET --url "$serverUrl/api/v2/runtimeEnvironment/" --header "icSessionId: $sessionId" --header 'Accept: application/json' | jq -r '.[] | select(.name == "'"$group"'") | .id')
+        action2=$(curl --location --request PUT "$serverUrl/api/v2/runtimeEnvironment/$result/selections" \
+          --header "Accept: application/json" \
+          --header "icSessionId: $sessionId" \
+          --header "Content-Type: application/json" \
+          --data-raw "{
+                        \"services\": {
+                          \"selections\": [
+                            {
+                              \"id\": \"00000047000000000002\",
+                              \"name\": \"Data Integration\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"00000047000000000004\",
+                              \"name\": \"Application Integration\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"00000047000000000010\",
+                              \"name\": \"Data Quality\",
+                              \"enabled\": true
+                            }
+                          ]
+                        },
+                        \"connectors\": {
+                           \"selections\": [
+                            {
+                              \"id\": \"010000000000064\",
+                              \"name\": \"Adobe Experience Platform\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000005E\",
+                              \"name\": \"Amazon S3 v2\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000006Q\",
+                              \"name\": \"Business 360\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000007K\",
+                              \"name\": \"Business 360 Events\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000007F\",
+                              \"name\": \"Business 360 FEP Connector\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000006D\",
+                              \"name\": \"Databricks Delta\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000000F\",
+                              \"name\": \"FileIO\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000002V\",
+                              \"name\": \"FileList\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"010000000000046\",
+                              \"name\": \"FileProcessor\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"010000000000059\",
+                              \"name\": \"Generic REST\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000004E\",
+                              \"name\": \"Google Cloud Storage V2\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000003J\",
+                              \"name\": \"JSON Target\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000004C\",
+                              \"name\": \"Microsoft Azure Blob Storage V3\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000004X\",
+                              \"name\": \"Microsoft Azure Data Lake Storage Gen1 V3\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000004L\",
+                              \"name\": \"Microsoft Azure Data Lake Storage Gen2\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000005H\",
+                              \"name\": \"Microsoft Azure Synapse SQL\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"010000000000047\",
+                              \"name\": \"Microsoft Excel\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000000U\",
+                              \"name\": \"Qlik\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"010000000000052\",
+                              \"name\": \"REST V2\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000000Q\",
+                              \"name\": \"ServiceNow\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000001D\",
+                              \"name\": \"Sharepoint\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000005V\",
+                              \"name\": \"Sharepoint Online\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"01000000000001X\",
+                              \"name\": \"WSConsumer\",
+                              \"enabled\": true
+                            },
+                            {
+                              \"id\": \"010000000000040\",
+                              \"name\": \"Webservices V2\",
+                              \"enabled\": true
+                            }
+                          ]
+                        },
+                        \"additionalServices\": {
+                          \"selections\": []
+                        }
+                      }")
+          echo -n $group "created on "; echo $action | jq "." | grep -oP '(?<=createTimeUTC": ")[^"]*'
+      fi
+      # Extract values
+      downloadUrl=$(echo $agent | sed -n '/downloadUrl/{s/.*<downloadUrl>\(.*\)<\/downloadUrl>.*/\1/;p}')
+      installToken=$(echo $agent | sed -n '/installToken/{s/.*<installToken>\(.*\)<\/installToken>.*/\1/;p}')
+      # Create a temporary log file
+      cd /home/$mdmagentadmin
+      # Download installer
+      curl -O $downloadUrl
+      chmod 755 ./$(basename "$downloadUrl")
+      # Install agent
+      ./$(basename "$downloadUrl") -i silent -DUSER_INSTALL_DIR="/home/$mdmagentadmin/infaagent"
+      chown -R $mdmagentadmin:$mdmagentadmin /home/$mdmagentadmin
+      chmod -R 755 /home/$mdmagentadmin
+      cd /home/$mdmagentadmin/infaagent/apps/agentcore
+      sudo -u $mdmagentadmin /home/$mdmagentadmin/infaagent/apps/agentcore/infaagent startup
+      sleep 10
+      sudo -u $mdmagentadmin /home/$mdmagentadmin/infaagent/apps/agentcore/consoleAgentManager.sh configureTokenWithRuntime $user $installToken $group
+      # Check status
+      sudo -u $mdmagentadmin /home/$mdmagentadmin/infaagent/apps/agentcore/consoleAgentManager.sh isConfigured
+      echo 'export LC_LOCALE="en_US.UTF-8"' | sudo tee -a /etc/bashrc
+      echo 'export LC_ALL="en_US.UTF-8"' | sudo tee -a /etc/bashrc
+      printenv | grep LC_
+
+runcmd:
+  - yum update -y --disablerepo='*' --enablerepo='*microsoft*'
+  - yum install -y libnsl libidn.x86_64
+  - bash /home/${adminuser}/enable_agent.sh ${username} "${password}" ${group} ${adminuser}
+  - mkdir /tmp/transfer
+  - chown -R ${adminuser}:${adminuser} /tmp/transfer
+  - export LC_LOCALE="en_US.UTF-8"
+  - export LC_ALL="en_US.UTF-8"
+  - sleep 1m
+  - dnf update -y

@@ -1,0 +1,22 @@
+parameters:
+  - name: environment
+    type: string
+
+stages:
+  - stage: Build
+    displayName: Build
+    jobs:
+      - job: ${{ parameters.environment }}
+        condition: and(
+            not(failed()), 
+            not(canceled())
+          )
+        displayName: Generating plan for ${{ parameters.environment }}
+        workspace:
+          clean: all
+        pool:
+          name: $(node_pool)
+        steps:
+          - template: /pipelines/templates/build.job.plansteps.yaml
+            parameters:
+              environmentName: ${{ parameters.environment }}

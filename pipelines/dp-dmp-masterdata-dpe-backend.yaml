@@ -1,0 +1,31 @@
+parameters:
+  - name: environment
+    displayName: Environment
+    type: string
+    default: dev
+    values:
+      - dev
+      - ppr
+      - mdlg
+      - prod
+
+trigger: none
+
+variables:
+  - name: terraform_version
+    value: "1.5.1"
+  - group: vg-masterdata-terraform-${{ parameters.environment }}
+  - name: conditionalValue
+    ${{ if eq( parameters['environment'], 'dev' ) }}:
+      value: "dev"
+    ${{ if eq( parameters['environment'], 'ppr' ) }}:
+      value: "dev"
+    ${{ if eq( parameters['environment'], 'mdlg' ) }}:
+      value: "prod"
+    ${{ if eq( parameters['environment'], 'prod' ) }}:
+      value: "prod"
+
+stages:
+  - template: /pipelines/templates/backend.stage.yaml
+    parameters:
+      environment: ${{ parameters.environment }}

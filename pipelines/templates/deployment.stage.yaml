@@ -1,0 +1,19 @@
+parameters:
+  - name: environmentName
+    type: string
+  - name: conditionalValue
+    type: string
+
+stages:
+  - stage: ${{ parameters.environmentName }}
+    dependsOn: [ Build ]
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    jobs:
+      - template: /pipelines/templates/deployment.job.yaml
+        parameters:
+          environmentName: ${{ parameters.environmentName }}
+          conditionalValue: ${{ parameters.conditionalValue }}
+

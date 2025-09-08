@@ -1,0 +1,110 @@
+parameters:
+  - name: environmentName
+    type: string
+
+steps:
+  - checkout: self
+    clean: true
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+
+  - task: AzureCLI@2
+    name: set_variables
+    displayName: Set Terraform Credentials
+    inputs:
+      azureSubscription: $(serviceConnectionName)
+      addSpnToEnvironment: true
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        Write-Host "##vso[task.setvariable variable=ARM_USE_OIDC]true"
+        Write-Host "##vso[task.setvariable variable=ARM_OIDC_TOKEN]$env:idToken"
+        Write-Host "##vso[task.setvariable variable=ARM_CLIENT_ID]$env:servicePrincipalId"
+        Write-Host "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID]$(az account show --query id -o tsv)"
+        Write-Host "##vso[task.setvariable variable=ARM_TENANT_ID]$env:tenantId"
+
+  - task: TerraformInstaller@0
+    displayName: Terraform Install
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      terraformVersion: $(terraform_version)
+
+  - task: TerraformTaskV3@3
+    displayName: Terraform Initialization
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      provider: "azurerm"
+      command: "custom"
+      workingDirectory: "$(Pipeline.Workspace)/s/masterdata"
+      customCommand: "init"
+      commandOptions: >-
+        -backend-config storage_account_name=$(backendAzureRmStorageAccountName) 
+        -backend-config container_name=$(backendAzureRmContainerName) 
+        -backend-config key=$(backendAzureRmKey).tfstate
+        -backend-config resource_group_name=$(backendAzureRmResourceGroupName) 
+        -backend-config subscription_id=$(backendAzureRmSubscriptionId)
+        -var=ARM_USE_OIDC=true
+        -var=ARM_OIDC_TOKEN=$(idToken)
+        -var=ARM_CLIENT_ID=$(servicePrincipalId)
+        -var=ARM_TENANT_ID=$(tenantId)
+
+        
+      outputTo: "console"
+      environmentServiceNameAzureRM: $(serviceConnectionName)
+      # environmentServiceNameAzureRM: sc-$(org_name_short)-dpe-terraform-$(env_sub_short)
+
+  #- task: TerraformTaskV3@3
+  #  displayName: Terraform Import
+  #  condition: and(
+  #    not(failed()),
+  #    not(canceled())
+  #    )
+  #  inputs:
+  #    provider: 'azurerm'
+  #    command: 'custom'
+  #    workingDirectory: '$(Pipeline.Workspace)/s/masterdata'
+  #    customCommand: 'import'
+  #    commandOptions: >-
+  #      -var-file=$(Pipeline.Workspace)/s/environments/${{ parameters.environmentName }}/terraform.tfvars
+  #      -var=subscription_id=$(subscription_id)
+  #      -var=AGENT_PASSWORD=$(TF_VAR_AGENT_PASSWORD)
+  #      azurerm_management_lock.tfstate /subscriptions/dxx-xxxx-xxx/resourceGroups/rgxx-xxxx-xxxc-01/providers/Microsoft.Storage/storageAccounts/samdlgtfcc83185994/providers/Microsoft.Authorization/locks/DoNotDelete
+  #    outputTo: 'console'
+  #    environmentServiceNameAzureRM: $(serviceConnectionName)
+  
+#        module.virtual_machine["\"secure_agent3\""].module.dynamic_secret.azurerm_key_vault_secret.secret https://kv-mdlg-masterdata-cc-01.vault.azure.net/secrets/mdmagentadmin3/dea24d480e894229bd9ddd4c10cc7e25# replace this with azurerm_management_lock above .. see story 578313
+
+  # - task: TerraformTaskV3@3
+  #   displayName: Terraform State Remove
+  #   condition: and(
+  #     not(failed()),
+  #     not(canceled())
+  #     )
+  #   inputs:
+  #     provider: "azurerm"
+  #     command: "custom"
+  #     workingDirectory: "$(Pipeline.Workspace)/s/masterdata"
+  #     customCommand: "state"
+  #     commandOptions: >-
+  #       rm azurerm_storage_container.tfstate
+  #     outputTo: "console"
+  #     environmentServiceNameAzureRM: $(serviceConnectionName)
+
+  - task: DeleteFiles@1
+    displayName: "Remove temporary files"
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      contents: $(Pipeline.Workspace)/**
+      RemoveSourceFolder: true
+      SourceFolder: $(Pipeline.Workspace)

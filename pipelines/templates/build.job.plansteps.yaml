@@ -1,0 +1,272 @@
+# Define pipeline parameters
+parameters:
+  - name: environmentName
+    type: string
+
+# Pipeline steps
+steps:
+  # Checkout the repository
+  - checkout: self
+    clean: true
+    # Execute if the previous task has not failed or been canceled
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+
+  # --- The following can be uncommented to install checkov ---
+  # - task: Bash@3
+  #   retryCountOnTaskFailure: 3
+  #   displayName: "Installing Dependencies"
+  #   condition: and(
+  #     not(failed()),
+  #     not(canceled())
+  #     )
+  #   inputs:
+  #     targetType: "inline"
+  #     workingDirectory: '$(Pipeline.Workspace)/s/masterdata'
+  #     script: |
+  #       python3 --version
+
+  #       timeout 300 bash -c -- 'while sudo fuser /var/lib/dpkg/lock-frontend > /dev/null 2>&1
+  #       do
+  #         echo "##[command]Waiting to get lock /var/lib/dpkg/lock-frontend..."
+  #         sleep 5
+  #       done'
+  #       wget -q "packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+  #       sudo dpkg -i packages-microsoft-prod.deb
+
+  #       timeout 300 bash -c -- 'while sudo fuser /var/lib/dpkg/lock-frontend > /dev/null 2>&1
+  #       do
+  #         echo "##[command]Waiting to get lock /var/lib/dpkg/lock-frontend..."
+  #         sleep 5
+  #       done'
+  #       sudo apt-get update
+
+  #       timeout 300 bash -c -- 'while sudo fuser /var/lib/dpkg/lock-frontend > /dev/null 2>&1
+  #       do
+  #         echo "##[command]Waiting to get lock /var/lib/dpkg/lock-frontend..."
+  #         sleep 5
+  #       done'
+  #       sudo apt-get install -y unzip apt-transport-https software-properties-common python3-pip powershell python3-testresources
+  #       echo "##vso[task.prependpath]$HOME/.local/bin"
+  #       echo "##vso[task.prependpath]$HOME/.local/lib/python3.8/site-packages"
+  #       echo "##[command]Prepending PATH environment variable with directory: $HOME/.local/bin"
+  #       echo "##[command]Prepending PATH environment variable with directory: $HOME/.local/lib/python3.8/site-packages"
+  #       export PATH=$HOME/.local/bin:$PATH
+  #       pip --version
+  #       pip install --user checkov==$(checkov_version)
+  #       which checkov
+  #       export checkovpath=$(pip show checkov | grep -e Location | sed 's/^.*: //')
+  #       sudo chmod +x $checkovpath
+  #       sudo chmod -R 0755 $checkovpath
+  #       sudo chmod -R 0755 $HOME/.local
+  #       sudo chmod -R 0755 $HOME/.local/bin
+  #       sudo chmod -R 0755 $HOME/.local/bin/checkov
+  #       sudo chmod +x $HOME/.local/bin/checkov
+  #       pip show checkov
+
+  # Install Terraform
+  - task: TerraformInstaller@0
+    displayName:
+      Terraform Install
+      # Execute if the previous task has not failed or been canceled
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      terraformVersion: $(terraform_version)
+  - task: AzureCLI@2
+    name: set_variables
+    displayName: Set Terraform Credentials
+    inputs:
+      azureSubscription: $(serviceConnectionName)
+      addSpnToEnvironment: true
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        Write-Host "##vso[task.setvariable variable=ARM_USE_OIDC]true"
+        Write-Host "##vso[task.setvariable variable=ARM_OIDC_TOKEN]$env:idToken"
+        Write-Host "##vso[task.setvariable variable=ARM_CLIENT_ID]$env:servicePrincipalId"
+        Write-Host "##vso[task.setvariable variable=ARM_SUBSCRIPTION_ID]$(az account show --query id -o tsv)"
+        Write-Host "##vso[task.setvariable variable=ARM_TENANT_ID]$env:tenantId"
+
+
+  # Initialize Terraform
+  - task: TerraformTaskV3@3
+    displayName: Terraform Initialization
+    # Execute if the previous task has not failed or been canceled
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      provider: "azurerm"
+      command: "custom"
+      workingDirectory: "$(Pipeline.Workspace)/s/masterdata"
+      customCommand: "init"
+      # Backend configuration options
+      commandOptions: >-
+        -backend-config storage_account_name=$(backendAzureRmStorageAccountName) 
+        -backend-config container_name=$(backendAzureRmContainerName) 
+        -backend-config key=$(backendAzureRmKey).tfstate
+        -backend-config resource_group_name=$(backendAzureRmResourceGroupName) 
+        -backend-config subscription_id=$(backendAzureRmSubscriptionId)
+        -var=ARM_USE_OIDC=true
+        -var=ARM_OIDC_TOKEN=$(idToken)
+        -var=ARM_CLIENT_ID=$(servicePrincipalId)
+        -var=ARM_TENANT_ID=$(tenantId)
+      outputTo: "console"
+      environmentServiceNameAzureRM: $(serviceConnectionName)
+      # environmentServiceNameAzureRM: sc-$(org_name_short)-dpe-terraform-$(env_sub_short)
+
+  # Validate Terraform configuration
+  - task: TerraformTaskV3@3
+    displayName: Terraform Validation
+    # Execute if the previous task has not failed or been canceled
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      provider: "azurerm"
+      command: "validate"
+      workingDirectory: $(Pipeline.Workspace)/s/masterdata
+
+  # Following task can be un-commented to perform state file unlock. Replace lock id with the current, shown in the pipeline error.
+
+  # - task: TerraformTaskV3@3
+  #   displayName: Terraform State File Unlocking
+  #   condition: and(
+  #     not(failed()),
+  #     not(canceled())
+  #     )
+  #   inputs:
+  #     provider: 'azurerm'
+  #     command: 'custom'
+  #     workingDirectory: '$(Pipeline.Workspace)/s/masterdata'
+  #     customCommand: 'force-unlock'
+  #     commandOptions: >-
+  #       -force 42xx-xxxx-xxxfdf20
+  #     outputTo: 'console'
+  #     environmentServiceNameAzureRM: $(serviceConnectionName)
+
+  # Generate Terraform plan
+  - task: TerraformTaskV3@3
+    name: tfplan
+    displayName: Terraform Plan
+    env:
+      ${{ if eq(variables['System.debug'], 'true') }}:
+        TF_LOG: DEBUG
+    # Execute if the previous task has not failed or been canceled
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      provider: "azurerm"
+      command: "plan"
+      environmentServiceNameAzureRM: $(serviceConnectionName)
+      # Terraform Plan configuration options
+      commandOptions: >-
+        -var-file=$(Pipeline.Workspace)/s/environments/${{ parameters.environmentName }}/terraform.tfvars
+        -var=subscription_id=$(subscription_id) 
+        -var=AGENT_PASSWORD=$(TF_VAR_AGENT_PASSWORD)
+        -out=$(Pipeline.Workspace)/s/masterdata/${{ parameters.environmentName }}.tfplan
+      workingDirectory: $(Pipeline.Workspace)/s/masterdata
+
+  # Following task can be un-commented to perform json plan output for checkov.
+  # - task: TerraformTaskV3@3
+  #   displayName: Terraform Json plan output for Checkov
+  #   condition: and(
+  #     not(failed()),
+  #     not(canceled())
+  #     )
+  #   inputs:
+  #     provider: 'azurerm'
+  #     command: 'show'
+  #     workingDirectory: $(Pipeline.Workspace)/s/masterdata
+  #     commandOptions: '$(Pipeline.Workspace)/s/masterdata/${{ parameters.environmentName }}.tfplan'
+  #     outputTo: 'file'
+  #     outputFormat: 'json'
+  #     fileName: "$(Pipeline.Workspace)/s/masterdata/${{ parameters.environmentName }}.json"
+  #     environmentServiceNameAzureRM: $(serviceConnectionName)
+
+  # Following task can be un-commented to perform checkov scan.
+  # - task: PowerShell@2
+  #   name: "plan_scan"
+  #   displayName: "Validating Terraform files with checkov"
+  #   enabled: true
+  #   condition: and(
+  #     not(failed()),
+  #     not(canceled())
+  #     )
+  #   inputs:
+  #     failOnStderr: false
+  #     ignoreLASTEXITCODE: true
+  #     targetType: inline
+  #     pwsh: true
+  #     script: |
+  #         $ErrorView = 'DetailedView'
+  #         $json_plan_file =  "$(Pipeline.Workspace)/s/masterdata/${{ parameters.environmentName }}.json"
+  #         $result_path = "$(Pipeline.Workspace)/s/masterdata/${{ parameters.environmentName }}-checkov-scan-result.xml"
+  #         $checkov = Get-Command -Name checkov -ErrorAction SilentlyContinue
+  #         if((Test-Path -Path $json_plan_file) -and ($checkov -as [System.Boolean])){
+  #           Write-Host "##[command]Plan file exists, will initialize test"
+  #           try{
+  #             checkov --framework terraform_plan --output junitxml --file $json_plan_file | Out-File -FilePath $result_path
+  #             if($LASTEXITCODE -eq 0){
+  #               Write-Host "##[command]checkov ran successfully, test result will be published now."
+  #             }
+  #             else{
+  #               Write-Host "##[command]Checkov finished with errors."
+  #             }
+  #             Write-Host ("##[debug]Printing output file content for debugging.")
+  #             Write-Host ("##[debug]{0}" -f $(Get-Content -Path $result_path -raw))
+  #           }
+  #           catch{
+  #             Write-Host -Object "##[error]$PSItem"
+  #           }
+  #         }
+
+  # Following task can be un-commented to publish checkov scan results.
+  # - task: PublishTestResults@2
+  #   displayName: Publish Checkov Scan Results
+  #   condition: and(
+  #     not(failed()),
+  #     not(canceled())
+  #     )
+  #   inputs:
+  #     testResultsFormat: "JUnit"
+  #     testResultsFiles: "**/*-checkov-scan-result.xml"
+  #     searchFolder: "$(Pipeline.Workspace)/s/masterdata"
+  #     mergeTestResults: true
+  #     testRunTitle: ${{ parameters.environmentName }} plan
+  #     failTaskOnFailedTests: false
+  #     publishRunAttachments: false
+
+  # Publish the Terraform plan file as a pipeline artifact
+  - task: PublishPipelineArtifact@1
+    displayName: Publish Terraform plan file as Artifact
+    # Execute if the previous task has not been canceled or failed
+    condition: and(
+      not(canceled()),
+      not(failed())
+      )
+    inputs:
+      targetPath: "$(Pipeline.Workspace)/s/masterdata/${{ parameters.environmentName }}.tfplan"
+      artifact: "${{ parameters.environmentName }}"
+      publishLocation: "pipeline"
+
+  # Remove temporary files
+  - task: DeleteFiles@1
+    displayName: "Remove temporary files"
+    condition: and(
+      not(failed()),
+      not(canceled())
+      )
+    inputs:
+      contents: $(Pipeline.Workspace)/**
+      RemoveSourceFolder: true
+      SourceFolder: $(Pipeline.Workspace)

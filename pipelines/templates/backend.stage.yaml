@@ -1,0 +1,22 @@
+parameters:
+  - name: environment
+    type: string
+
+stages:
+  - stage: Backend
+    displayName: Backend
+    jobs:
+      - job: ${{ parameters.environment }}
+        condition: and(
+          not(failed()),
+          not(canceled())
+          )
+        displayName: Running Custom TF Commands for ${{ parameters.environment }}
+        workspace:
+          clean: all
+        pool:
+          name: $(node_pool)
+        steps:
+          - template: /pipelines/templates/backend.job.plansteps.yaml
+            parameters:
+              environmentName: ${{ parameters.environment }}

@@ -1,0 +1,44 @@
+parameters:
+  - name: environment
+    displayName: Environment
+    type: string
+    default: dev
+    values:
+      - dev
+      - ppr
+      - mdlg
+      - prod
+  - name: deploy
+    displayName: Deploy
+    type: boolean
+    default: false
+
+trigger: none
+
+variables:
+  - name: checkov_version
+    value: "2.2.292"
+  - name: terraform_version
+    value: "1.5.1"
+  # - template: /variables/global_variables.yaml # optional - enable when needed
+  - group: vg-masterdata-terraform-${{ parameters.environment }}
+  - name: conditionalValue
+    ${{ if eq( parameters['environment'], 'dev' ) }}:
+      value: "dev"
+    ${{ if eq( parameters['environment'], 'ppr' ) }}:
+      value: "dev"
+    ${{ if eq( parameters['environment'], 'mdlg' ) }}:
+      value: "prod"
+    ${{ if eq( parameters['environment'], 'prod' ) }}:
+      value: "prod"
+
+stages:
+  - template: /pipelines/templates/build.stage.yaml
+    parameters:
+      environment: ${{ parameters.environment }}
+
+  - ${{ if and(notIn(variables['Build.Reason'], 'PullRequest'), or(eq(variables['build.sourceBranch'], 'refs/heads/main'), eq(parameters.environment,'dev')), parameters.deploy) }}:
+      - template: /pipelines/templates/deployment.stage.yaml
+        parameters:
+          environmentName: ${{ parameters.environment }}
+          conditionalValue: $(conditionalValue)
