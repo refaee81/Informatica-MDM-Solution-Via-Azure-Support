@@ -1,0 +1,35 @@
+#ignore all plan files
+**/*.plan
+
+#ignore all zip files
+**/*.zip
+
+#ignore all plugin folders contents
+# eg: subscription\dap-production\prd\state-file\.terraform\plugins\darwin_amd64
+**/.terraform/plugins/*
+**/.terraform/providers/registry.terraform.io/hashicorp/*
+
+#ignore all terraform folders
+.terraform/*
+#**/dev/.terraform/*
+
+# the local terraform-plan file
+terraform-plan
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+# .tfvars files
+#.tfvars
+build/*
+reports/*
+
+#workspace
+*code-workspace
+
+#ignore all vscode settings files
+.vscode/*
+
+#ignore all tflint files
+**/.tflint.*
