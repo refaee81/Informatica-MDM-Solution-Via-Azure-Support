@@ -47,7 +47,7 @@ tf_container_name = "txx-xxxx-xxx-dpe"
 
 # External VNet/Subnet
 #vnet_snet_extnl_pipelines_vnet_containers_cloudx   = "/subscriptions/xx-xxxx-xxx"
-vnet_snet_extnl_pipelines_vnet_containers_clouds2x = "/subscriptions/3xx-xxxx-xxx/xx-xxxx-xxx/providers/Microsoft.Network/virtualNetworks/vnet-core-hub-cc-01/subnets/snet-core-azdosha-cc-01"
+vnet_snet_extnl_pipelines_vnet_containers_clouds2x = "/subscriptions/3xx-xxxx-xxx/xx-xxxx-xxx/providers/Microsoft.Network/virtualNetworks/vnet-core-hub-cc-01/subnets/snet-coxx-xxxx-xxxc-01"
 #vnet_snet_core_hub = "/subscriptions/3xx-xxxx-xxxcc-01/subnets/[*]"
 
 # Tags
@@ -1055,3 +1055,4 @@ vm_tags = {
 bypass_platform_safety_checks = true
 
 sa_private_link_access = true
+
